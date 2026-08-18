@@ -8,5 +8,6 @@ class RAGPipeline:
         self.generator = generator
 
     def answer(self, question: str, limit: int = 5) -> tuple[str, list[str]]:
-        context = self.retriever.retrieve(question, limit=limit)
+        results = self.retriever.retrieve(question, top_k=limit)
+        context = [result.text for result in results]
         return self.generator.generate(question, context), context

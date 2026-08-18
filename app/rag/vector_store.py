@@ -6,15 +6,19 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeAlias
 
 import chromadb
+
+MetadataValue: TypeAlias = str | int | float | bool
+MetadataFilters: TypeAlias = dict[str, MetadataValue]
 
 
 @dataclass(frozen=True)
 class SearchResult:
     chunk_id: str
     text: str
-    metadata: dict[str, str | int | float | bool]
+    metadata: dict[str, MetadataValue]
     distance: float
 
     @property
@@ -39,6 +43,7 @@ class VectorStore(ABC):
         self,
         embedding: Sequence[float],
         limit: int = 5,
+        filters: MetadataFilters | None = None,
     ) -> list[SearchResult]:
         """Return nearest records including metadata and distance."""
 
@@ -86,16 +91,28 @@ class ChromaVectorStore(VectorStore):
         self,
         embedding: Sequence[float],
         limit: int = 5,
+        filters: MetadataFilters | None = None,
     ) -> list[SearchResult]:
         if limit <= 0:
             raise ValueError("limit must be positive")
         if self.count == 0:
             return []
 
+        query: dict[str, object] = {
+            "query_embeddings": [list(embedding)],
+            "n_results": min(limit, self.count),
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if filters:
+            # Chroma requires an explicit logical operator for multiple fields.
+            query["where"] = (
+                filters
+                if len(filters) == 1
+                else {"$and": [{key: value} for key, value in filters.items()]}
+            )
+
         response = self.collection.query(
-            query_embeddings=[list(embedding)],
-            n_results=min(limit, self.count),
-            include=["documents", "metadatas", "distances"],
+            **query,
         )
         ids = response["ids"][0]
         documents = (response["documents"] or [[]])[0]
